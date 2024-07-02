@@ -1,41 +1,106 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'connectivity_service.dart';
+import 'battery_service.dart';
 import 'signin.dart';
 import 'signup.dart';
 import 'calculator.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) {
+    await Firebase.initializeApp(
+        options: FirebaseOptions(
+            apiKey: "AIzaSyBi41XH0iQjIw1tfXtjVsZ6-XKt54-QqIc",
+            authDomain: "fire-setup-1b71e.firebaseapp.com",
+            projectId: "fire-setup-1b71e",
+            storageBucket: "fire-setup-1b71e.appspot.com",
+            messagingSenderId: "865095529734",
+            appId: "1:865095529734:web:01679f35ee2006e019da87"));
+  } else {
+    await Firebase.initializeApp();
+  }
+
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MyApp extends StatefulWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _isDarkMode = false;
+
+  void toggleTheme() {
+    setState(() {
+      _isDarkMode = !_isDarkMode;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Menu',
-      theme: ThemeData(
-        primarySwatch: Colors.green,
-      ),
-      home: const HomeScreen(),
+      theme: _isDarkMode ? _darkTheme : _lightTheme,
+      home: HomeScreen(toggleTheme: toggleTheme, isDarkMode: _isDarkMode),
     );
   }
 }
 
+final ThemeData _lightTheme = ThemeData(
+  primarySwatch: Colors.green,
+  brightness: Brightness.light,
+  visualDensity: VisualDensity.adaptivePlatformDensity,
+);
+
+final ThemeData _darkTheme = ThemeData(
+  primarySwatch: Colors.green,
+  brightness: Brightness.dark,
+  visualDensity: VisualDensity.adaptivePlatformDensity,
+);
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final Function toggleTheme;
+  final bool isDarkMode;
+
+  const HomeScreen({Key? key, required this.toggleTheme, required this.isDarkMode}) : super(key: key);
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final ConnectivityService _connectivityService = ConnectivityService();
+  final BatteryService _batteryService = BatteryService();
+
   int _selectedIndex = 0;
-  final List<Widget> _screens = [
-    SignInScreen(),
-    SignUpScreen(),
-    const CalculatorScreen(),
-  ];
+  late List<Widget> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      SignInScreen(),
+      SignUpPage(),
+      const CalculatorScreen(),
+    ];
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _connectivityService.initialize(context);
+      _batteryService.initialize(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivityService.dispose();
+    _batteryService.dispose();
+    super.dispose();
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -48,6 +113,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Menu'),
+        actions: [
+          IconButton(
+            icon: Icon(widget.isDarkMode ? Icons.wb_sunny : Icons.nightlight_round),
+            onPressed: () => widget.toggleTheme(),
+          ),
+        ],
       ),
       body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -66,24 +137,33 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: const Color.fromARGB(255, 179, 255, 0),
-        unselectedItemColor: const Color.fromARGB(255, 139, 96, 133),
+        selectedItemColor: Theme.of(context).colorScheme.secondary,
         onTap: _onItemTapped,
       ),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: <Widget>[
-            const DrawerHeader(
+            DrawerHeader(
               decoration: BoxDecoration(
-                color: Color.fromARGB(255, 99, 175, 76),
+                color: Theme.of(context).primaryColor,
               ),
-              child: Text(
-                'Navigation Drawer',
-                style: TextStyle(
-                  color: Color.fromARGB(255, 236, 165, 165),
-                  fontSize: 24,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Navigation Drawer',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Switch(
+                    value: widget.isDarkMode,
+                    onChanged: (value) => widget.toggleTheme(),
+                  ),
+                ],
               ),
             ),
             ListTile(

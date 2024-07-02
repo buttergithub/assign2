@@ -1,12 +1,102 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class SignUpScreen extends StatelessWidget {
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({Key? key}) : super(key: key);
+
+  @override
+  _SignUpPageState createState() => _SignUpPageState();
+}
+
+class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  bool _isLoading = false;
 
-  SignUpScreen({super.key});
+  Future<void> _signUpWithEmailAndPassword() async {
+    if (_formKey.currentState?.validate() ?? false) {
+      setState(() {
+        _isLoading = true;
+      });
+      try {
+        UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+          email: _emailController.text,
+          password: _passwordController.text,
+        );
+        
+        // Add user details to Firestore
+        await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+          'name': _nameController.text,
+          'email': _emailController.text,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        // Update user profile
+        await userCredential.user!.updateDisplayName(_nameController.text);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign up successful')),
+        );
+        // Navigate to home page or verification page
+      } on FirebaseAuthException catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.message}')),
+        );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signUpWithGoogle() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return;
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      UserCredential userCredential = await _auth.signInWithCredential(credential);
+      
+      // Check if it's a new user
+      if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+        // Add user details to Firestore
+        await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+          'name': userCredential.user!.displayName,
+          'email': userCredential.user!.email,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google sign up successful')),
+      );
+      // Navigate to home page
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,65 +110,46 @@ class SignUpScreen extends StatelessWidget {
           child: Form(
             key: _formKey,
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                const SizedBox(height: 20),
-                const Icon(
-                  Icons.account_circle,
-                  size: 100,
-                  color: Colors.blue,
+                _buildTextField(
+                  controller: _nameController,
+                  hintText: 'Enter your name',
+                  label: 'Name',
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Create Account',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 16),
                 _buildTextField(
                   controller: _emailController,
-                  hintText: 'Email',
-                  obscureText: false,
-                  icon: Icons.email,
+                  hintText: 'Enter your email',
+                  label: 'Email',
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 _buildTextField(
                   controller: _passwordController,
-                  hintText: 'Password',
+                  hintText: 'Enter your password',
+                  label: 'Password',
                   obscureText: true,
-                  icon: Icons.lock,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 _buildTextField(
                   controller: _confirmPasswordController,
-                  hintText: 'Confirm Password',
+                  hintText: 'Confirm your password',
+                  label: 'Confirm Password',
                   obscureText: true,
-                  icon: Icons.lock_outline,
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () {
-                    if (_formKey.currentState?.validate() ?? false) {
-                      // Process data.
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Processing Data')),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    child: Text(
-                      'Sign Up',
-                      style: TextStyle(fontSize: 18),
-                    ),
-                  ),
+                  onPressed: _isLoading ? null : _signUpWithEmailAndPassword,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text('Sign Up'),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _signUpWithGoogle,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text('Sign Up with Google'),
                 ),
               ],
             ),
@@ -91,42 +162,32 @@ class SignUpScreen extends StatelessWidget {
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
-    required bool obscureText,
-    required IconData icon,
+    required String label,
+    bool obscureText = false,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 25.0),
-      child: TextFormField(
-        controller: controller,
-        obscureText: obscureText,
-        decoration: InputDecoration(
-          enabledBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: Colors.white),
-            borderRadius: BorderRadius.circular(30),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderSide: BorderSide(color: Colors.grey.shade400),
-            borderRadius: BorderRadius.circular(30),
-          ),
-          fillColor: Colors.grey.shade200,
-          filled: true,
-          hintText: hintText,
-          hintStyle: TextStyle(color: Colors.grey[500]),
-          prefixIcon: Icon(icon, color: Colors.grey),
-        ),
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return 'This field is required';
-          }
-          if (hintText == 'Email' && !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-            return 'Please enter a valid email';
-          }
-          if (hintText == 'Confirm Password' && value != _passwordController.text) {
-            return 'Passwords do not match';
-          }
-          return null;
-        },
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        hintText: hintText,
+        labelText: label,
       ),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'This field is required';
+        }
+        if (label == 'Email' && !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+          return 'Please enter a valid email';
+        }
+        if (label == 'Password' && value.length < 6) {
+          return 'Password must be at least 6 characters long';
+        }
+        if (label == 'Confirm Password' && value != _passwordController.text) {
+          return 'Passwords do not match';
+        }
+        return null;
+      },
     );
   }
 }
